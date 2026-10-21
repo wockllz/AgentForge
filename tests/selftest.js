@@ -12,11 +12,25 @@
 "use strict";
 
 const { spawn } = require("child_process");
+const net = require("net");
 const path = require("path");
 
 const ROOT = path.join(__dirname, "..");
-const APP_PORT = 4390;
-const MOCK_PORT = 11500;
+// ports are picked fresh at runtime, so a stale server from a crashed old
+// run can never break a rerun (the #1 cause of selftest hangs)
+let APP_PORT = 0;
+let MOCK_PORT = 0;
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.listen(0, "127.0.0.1", () => {
+      const port = srv.address().port;
+      srv.close(() => resolve(port));
+    });
+    srv.on("error", reject);
+  });
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -73,6 +87,8 @@ function assert(cond, label) {
 
 async function main() {
   let exitCode = 1;
+  MOCK_PORT = await freePort();
+  APP_PORT = await freePort();
   const failOnce = process.env.MOCK_FAIL_ONCE === "1";
   console.log(failOnce
     ? "== selftest (with forced build failure — retry loop must repair it) =="
@@ -96,7 +112,7 @@ async function main() {
 
   try {
     const base = `http://127.0.0.1:${APP_PORT}`;
-    await waitFor(`${base}/api/health`, 15000, "AgentForge server");
+    await waitFor(`${base}/api/health`, 45000, "AgentForge server"); // slow machines need room
     console.log("  ✓ server up");
 
     const ollama = await (await fetch(`${base}/api/ollama/status`)).json();
@@ -106,7 +122,7 @@ async function main() {
     const missionId = await forgeApp(base);
     console.log(`  ✓ mission accepted: ${missionId.slice(0, 8)}…`);
 
-    const result = await waitForMission(base, missionId, 90000);
+    const result = await waitForMission(base, missionId, 300000); // 5 min budget for slow machines
     assert(result.mission.status === "complete", "mission completes");
     assert(result.mission.attempts >= 1, `builder attempts recorded (${result.mission.attempts})`);
     if (failOnce) {

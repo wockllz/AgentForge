@@ -4,9 +4,10 @@
   "description": "An AI engineering team that plans, builds, and verifies web apps live \u2014 powered by local LLMs via Ollama.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "demo": "node tests/demo.js",
     "dev": "node server.js",
-    "selftest": "node tests/selftest.js"
+    "selftest": "node tests/selftest.js",
+    "start": "node server.js"
   },
   "keywords": [
     "ai-agents",
