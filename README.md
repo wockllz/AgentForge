@@ -56,28 +56,93 @@ Most "AI builds an app" demos just dump an LLM's output on screen and hope it wo
 - **Generated apps are sandboxed**: served read-only from `generated/`, previewed in a sandboxed iframe, never executed server-side
 - Robust output parsing: survives models that wrap code/JSON in fences, prose, or both
 
-## 🚀 Quickstart
+## 🚀 Quickstart (complete setup — follow every step)
 
-**Prerequisites:** [Node.js 18+](https://nodejs.org) and [Ollama](https://ollama.com) with a code-capable model.
+### Step 0 — Install Node.js (skip if you already have it)
+
+Download the **LTS** installer from <https://nodejs.org> and run it (next-next-finish is fine).
+Check it in a terminal / PowerShell:
 
 ```bash
-# 1. get the code
+node -v      # should print v18.x or higher
+npm -v
+```
+
+### Step 1 — Install Ollama (the local AI engine)
+
+Ollama runs the language model on your own machine. Free, no account, no API key.
+
+- **Windows:** download the installer from <https://ollama.com/download/windows> and run it. That's it — Ollama starts automatically and lives in your system tray.
+- **macOS:** `brew install ollama` or download from <https://ollama.com/download/mac>
+- **Linux:** `curl -fsSL https://ollama.com/install.sh | sh`
+
+Check it's alive:
+
+```bash
+ollama --version
+```
+
+> **Keep Ollama running.** On Windows it runs in the background automatically (check the system tray for the Ollama icon). If the dashboard later says `OLLAMA: OFFLINE`, Ollama isn't running — start it with `ollama serve` or relaunch the app.
+
+### Step 2 — Download a code model (the agents' brain)
+
+AgentForge's agents think with whatever model you give them. For writing code, Qwen Coder is the best small local model — this is the recommended setup:
+
+```bash
+ollama pull qwen2.5-coder:7b
+```
+
+This downloads ~4.7 GB, so give it a few minutes (progress bar shows while it downloads).
+
+**Hardware guide:**
+| Your machine | Model to pull | Command |
+|---|---|---|
+| 16 GB RAM or more (recommended) | Qwen2.5 Coder 7B — best quality apps | `ollama pull qwen2.5-coder:7b` |
+| 8 GB RAM | Qwen2.5 Coder 3B — still good | `ollama pull qwen2.5-coder:3b` |
+| 4 GB RAM / older laptop | Llama 3.2 3B — simpler apps, works fine | `ollama pull llama3.2:3b` |
+
+Verify the model landed:
+
+```bash
+ollama list
+# NAME                    SIZE
+# qwen2.5-coder:7b        4.7 GB
+```
+
+> Whichever models appear in `ollama list` show up in the AgentForge dashboard's MODEL dropdown — you pick the brain per mission.
+
+### Step 3 — Get AgentForge and launch mission control
+
+```bash
 git clone https://github.com/wockllz/AgentForge.git
 cd AgentForge
 npm install
-
-# 2. pull a model (pick one)
-ollama pull qwen2.5-coder:7b     # recommended — best small code model
-ollama pull llama3.2:3b          # lighter, for modest hardware
-
-# 3. launch mission control
 npm start
-# → http://localhost:4300
 ```
 
-Describe an app, hit **⚒️ FORGE APP**, and watch the team work.
+Then open **http://localhost:4300** in your browser.
 
-**No Ollama yet?** The dashboard still loads and shows the connection status — but missions need a model, so install Ollama first.
+### Step 4 — Forge your first app
+
+1. Check the top bar says `OLLAMA: ONLINE` (if OFFLINE, see Step 1)
+2. Pick your model in the MODEL dropdown (e.g. `qwen2.5-coder:7b`)
+3. Type an idea — e.g. *"a pomodoro timer with a task list and dark mode"*
+4. Hit **⚒️ FORGE APP** and watch ATLAS plan, PIXEL code (live stream), and SENTINEL verify
+5. When the mission completes, hit **↗ OPEN PREVIEW** — the app the agents built is really running
+
+First mission takes a few minutes on 7B models — that's your CPU/GPU generating real code token by token. Watch the LIVE CODESTREAM panel; that's the model actually writing.
+
+### 🛠️ Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `OLLAMA: OFFLINE` in the top bar | Ollama isn't running. Windows: check the system tray. Or run `ollama serve` in a terminal and refresh the dashboard. |
+| MODEL dropdown is empty | You haven't pulled a model. Run `ollama pull qwen2.5-coder:7b`, wait for it to finish, refresh. |
+| Mission stuck on PLANNING for ages | Small models think slowly on CPU. Wait (up to ~5 min) or pull a smaller model. Don't forge two missions at once on weak hardware. |
+| Mission fails after 3 attempts | Some ideas are too big for one page. Try a shorter, simpler prompt ("a quiz app with 5 questions" works great on 7B). |
+| `port 4300 in use` | Something else owns the port: `PORT=4301 npm start` (Windows PowerShell: `$env:PORT=4301; npm start`). |
+
+**No Ollama at all?** The dashboard still loads and shows the connection status — but missions need a model, so do Steps 1–2 first. You can also prove the engine works without any model: `npm run selftest`.
 
 ## 🧪 Self-test (no Ollama required)
 
