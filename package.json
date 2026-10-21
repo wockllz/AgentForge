@@ -1,0 +1,28 @@
+{
+  "name": "agentforge",
+  "version": "1.0.0",
+  "description": "An AI engineering team that plans, builds, and verifies web apps live — powered by local LLMs via Ollama.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "selftest": "node tests/selftest.js"
+  },
+  "keywords": [
+    "ai-agents",
+    "ollama",
+    "llm",
+    "multi-agent",
+    "express",
+    "sqlite",
+    "code-generation"
+  ],
+  "author": "Ntshuxeko Sambo",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "node-html-parser": "^6.1.13"
+  }
+}
