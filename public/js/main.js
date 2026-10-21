@@ -1,6 +1,7 @@
 /**
- * AgentForge — mission control frontend.
- * Vanilla JS. Follows missions live over Server-Sent Events.
+ * AgentForge — mission control frontend (v2).
+ * Vanilla JS. Live 3D forge stage, stage-stepper, ATLAS mission brief,
+ * timeline feed, code panes — all driven over Server-Sent Events.
  */
 "use strict";
 
@@ -8,18 +9,28 @@
   const $ = (id) => document.getElementById(id);
 
   const AGENTS = [
-    { id: "atlas", name: "ATLAS", role: "PLANNER", desc: "Breaks the idea into a build plan" },
+    { id: "atlas", name: "ATLAS", role: "PLANNER", desc: "Briefs the mission, sets the design direction" },
     { id: "pixel", name: "PIXEL", role: "BUILDER", desc: "Writes the entire app: HTML, CSS, JS" },
     { id: "sentinel", name: "SENTINEL", role: "VERIFIER", desc: "Runs real checks, forces revisions" }
   ];
 
+  const STAGES = {
+    queued: null,
+    planning: "planning",
+    building: "building",
+    revision: "building",
+    verifying: "verifying",
+    complete: "complete",
+    failed: null
+  };
+
   const state = {
     missions: [],
     activeId: null,
-    activeAgent: null,
     stream: null,
     liveBuffer: "",
-    done: {}
+    planPhases: [],
+    checks: { pass: 0, fail: 0 }
   };
 
   // ---------------------------------------------------------------- render
@@ -36,10 +47,30 @@
         "</div>"
       );
     }).join("");
+    if (window.AgentViz) window.AgentViz.setActive(activeAgent || null);
   }
 
-  function statusLabel(m) {
-    return m ? m.status.toUpperCase() : "STANDBY";
+  function setPill(status) {
+    const pill = $("mission-pill");
+    pill.textContent = status ? status.toUpperCase() : "STANDBY";
+    pill.className = "mission-pill" +
+      (["planning", "building", "revision", "verifying", "queued"].includes(status) ? " live" : "") +
+      (status === "complete" ? " complete" : "") +
+      (status === "failed" ? " failed" : "");
+  }
+
+  function setStage(status) {
+    const target = STAGES[status] || null;
+    const order = ["planning", "building", "verifying", "complete"];
+    const targetIdx = target ? order.indexOf(target) : -1;
+    $("stage-stepper").querySelectorAll(".stage").forEach((el) => {
+      const stage = el.dataset.stage;
+      const idx = order.indexOf(stage);
+      el.classList.remove("active", "done");
+      if (target === null) return;
+      if (idx < targetIdx) el.classList.add("done");
+      else if (idx === targetIdx) el.classList.add(target === "complete" ? "done" : "active");
+    });
   }
 
   function renderHistory() {
@@ -49,8 +80,7 @@
       return;
     }
     wrap.innerHTML = state.missions.map((m) => {
-      const badge = m.status === "complete" || m.status === "failed" ? m.status
-        : (m.status === "queued" ? "queued" : m.status);
+      const badge = ["complete", "failed", "queued"].includes(m.status) ? m.status : m.status;
       return (
         '<div class="mission-row' + (m.id === state.activeId ? " active" : "") +
           '" data-id="' + m.id + '">' +
@@ -59,21 +89,11 @@
         "</div>"
       );
     }).join("");
-    // safe text fill (no innerHTML for user content)
     const rows = wrap.querySelectorAll(".mission-row");
     rows.forEach((row, i) => {
       row.querySelector(".mr-prompt").textContent = state.missions[i].prompt;
       row.addEventListener("click", () => selectMission(state.missions[i].id));
     });
-  }
-
-  function setPill(status) {
-    const pill = $("mission-pill");
-    pill.textContent = statusLabel({ status });
-    pill.className = "mission-pill" +
-      (["planning", "building", "revision", "verifying", "queued"].includes(status) ? " live" : "") +
-      (status === "complete" ? " complete" : "") +
-      (status === "failed" ? " failed" : "");
   }
 
   function addFeedRow(ev) {
@@ -82,9 +102,16 @@
     if (hint) hint.remove();
 
     const row = document.createElement("div");
-    const passFail = ev.type === "check" && ev.data && typeof ev.data.ok === "boolean"
-      ? (ev.data.ok ? " check-pass" : " check-fail") : "";
-    row.className = "feed-row" + passFail;
+    let cls = "feed-row";
+    if (ev.type === "thought") cls += " thought";
+    if (ev.type === "check" && ev.data && typeof ev.data.ok === "boolean") {
+      cls += ev.data.ok ? " check-pass" : " check-fail";
+      if (state.activeId) {
+        if (ev.data.ok) state.checks.pass += 1;
+        else state.checks.fail += 1;
+      }
+    }
+    row.className = cls;
 
     const time = document.createElement("span");
     time.className = "feed-time";
@@ -96,12 +123,72 @@
 
     const msg = document.createElement("span");
     msg.className = "feed-msg";
-    msg.textContent = ev.message;
+    msg.textContent = (ev.type === "thought" ? "⟡ " : "") + ev.message;
 
     row.append(time, agent, msg);
     feed.append(row);
     feed.scrollTop = feed.scrollHeight;
-    if (feed.children.length > 120) feed.removeChild(feed.firstChild);
+    if (feed.children.length > 150) feed.removeChild(feed.firstChild);
+  }
+
+  function renderPlan(ev) {
+    state.planPhases.push(ev.data);
+    renderPlanPanel();
+  }
+
+  function renderPlanPanel() {
+    const panel = $("plan-panel");
+    panel.innerHTML = "";
+    const mission = state.missions.find((m) => m.id === state.activeId);
+    const meta = state.planMeta;
+    if (!state.planPhases.length && !meta) {
+      panel.innerHTML = '<div class="empty">No plan yet — ATLAS briefs here when a mission starts.</div>';
+      return;
+    }
+    if (meta && meta.thinking) {
+      const think = document.createElement("div");
+      think.className = "plan-thinking";
+      think.textContent = "ATLAS thinking: " + meta.thinking;
+      panel.append(think);
+    }
+    if (meta && (meta.summary || meta.app_name)) {
+      const sum = document.createElement("div");
+      sum.className = "plan-summary";
+      sum.innerHTML = "";
+      const name = document.createElement("span");
+      name.className = "plan-name";
+      name.textContent = meta.app_name || "forged-app";
+      const rest = document.createElement("span");
+      rest.textContent = " — " + (meta.summary || "");
+      sum.append(name, rest);
+      panel.append(sum);
+    }
+    if (meta && meta.design_notes) {
+      const notes = document.createElement("div");
+      notes.className = "design-notes";
+      Object.entries(meta.design_notes).forEach(([k, v]) => {
+        const n = document.createElement("span");
+        n.className = "design-note";
+        n.textContent = k + ": " + v;
+        notes.append(n);
+      });
+      panel.append(notes);
+    }
+    state.planPhases.forEach((phase, i) => {
+      const card = document.createElement("div");
+      card.className = "phase-card";
+      const name = document.createElement("div");
+      name.className = "phase-name";
+      name.textContent = (i + 1) + ". " + phase.name;
+      const ul = document.createElement("ul");
+      (phase.tasks || []).forEach((task) => {
+        const li = document.createElement("li");
+        li.textContent = task;
+        ul.append(li);
+      });
+      card.append(name, ul);
+      panel.append(card);
+    });
   }
 
   function renderFiles(files) {
@@ -124,7 +211,7 @@
     view.textContent = files[names[0]];
   }
 
-  function showPreview(missionId) {
+  function showPreview(missionId, mission) {
     const zone = $("preview-zone");
     zone.innerHTML = "";
     const frame = document.createElement("iframe");
@@ -133,9 +220,40 @@
     frame.title = "Forged app preview";
     zone.append(frame);
 
+    const meta = $("preview-meta");
+    meta.innerHTML = "";
+    if (mission) {
+      const secs = mission.duration_ms ? Math.round(mission.duration_ms / 1000) : null;
+      const line1 = document.createElement("div");
+      line1.textContent = "APP: " + (mission.app_name || "forged-app") +
+        "   |   ATTEMPTS: " + mission.attempts;
+      const line2 = document.createElement("div");
+      line2.textContent = "CHECKS: " + state.checks.pass + " passed" +
+        (state.checks.fail ? " / " + state.checks.fail + " failed" : "") +
+        (secs ? "   |   FORGED IN " + secs + "s" : "");
+      line2.className = "meta-strong";
+      meta.append(line1, line2);
+    }
+
     $("preview-actions").classList.remove("hidden");
     $("preview-link").href = "/p/" + missionId + "/index.html";
     $("download-btn").onclick = () => downloadFiles(missionId);
+  }
+
+  function clearPanels() {
+    state.planPhases = [];
+    state.planMeta = null;
+    state.checks = { pass: 0, fail: 0 };
+    state.liveBuffer = "";
+    $("feed").innerHTML = "";
+    $("live-stream").textContent = "";
+    $("code-view").textContent = "";
+    $("file-tabs").innerHTML = "";
+    $("plan-panel").innerHTML =
+      '<div class="empty">No plan yet — ATLAS briefs here when a mission starts.</div>';
+    $("preview-zone").innerHTML = '<div class="empty">Forging in progress…</div>';
+    $("preview-meta").innerHTML = "";
+    $("preview-actions").classList.add("hidden");
   }
 
   async function downloadFiles(missionId) {
@@ -174,14 +292,20 @@
       }
 
       if (payload.kind === "event") {
-        addFeedRow(payload.event);
+        const ev = payload.event;
+        addFeedRow(ev);
+        if (ev.type === "plan") renderPlan(ev);
+        if (ev.type === "brief") {
+          state.planMeta = ev.data;
+          renderPlanPanel();
+        }
       } else if (payload.kind === "token") {
         renderAgents(payload.agent);
-        state.activeAgent = payload.agent;
         state.liveBuffer = (state.liveBuffer + payload.token).slice(-4000);
         $("live-stream").textContent = state.liveBuffer;
       } else if (payload.kind === "status") {
         setPill(payload.status);
+        setStage(payload.status);
         if (payload.status === "planning") renderAgents("atlas");
         if (payload.status === "building" || payload.status === "revision") renderAgents("pixel");
         if (payload.status === "verifying") renderAgents("sentinel");
@@ -190,20 +314,17 @@
         es.close();
         state.stream = null;
         renderAgents(null);
+        setPill(payload.ok ? "complete" : "failed");
+        setStage(payload.ok ? "complete" : "failed");
         refreshMissions().then(() => {
           if (payload.ok) {
-            setPill("complete");
             loadMission(missionId);
-            showPreview(missionId);
-          } else {
-            setPill("failed");
           }
         });
       }
     };
 
     es.onerror = () => {
-      // EventSource auto-reconnects; if the mission is finished, close it out.
       const m = state.missions.find((x) => x.id === missionId);
       if (m && (m.status === "complete" || m.status === "failed")) es.close();
     };
@@ -214,23 +335,34 @@
     if (!res.ok) return;
     const body = await res.json();
     state.activeId = missionId;
-    state.done[missionId] = body.mission.status;
 
-    if (body.mission.status !== "complete" && body.mission.status !== "failed") {
-      openStream(missionId);
-    } else {
-      setPill(body.mission.status);
-      showPreview(missionId);
-    }
+    clearPanels();
+    setPill(body.mission.status);
+    setStage(body.mission.status);
 
-    const feed = $("feed");
-    feed.innerHTML = "";
-    if (!body.events.length) {
-      feed.innerHTML = '<div class="feed-hint">This mission has no events.</div>';
-    }
-    body.events.forEach(addFeedRow);
+    // reconstruct panels from the event history
+    body.events.forEach((ev) => {
+      if (ev.type === "check" && ev.data && typeof ev.data.ok === "boolean") {
+        if (ev.data.ok) state.checks.pass += 1;
+        else state.checks.fail += 1;
+      }
+      if (ev.type === "brief") state.planMeta = ev.data;
+      if (ev.type === "plan") state.planPhases.push(ev.data);
+      addFeedRow(ev);
+    });
+    renderPlanPanel();
     renderFiles(body.files || {});
     renderHistory();
+
+    if (body.mission.status === "complete") {
+      showPreview(missionId, body.mission);
+      renderAgents(null);
+    } else if (body.mission.status !== "failed") {
+      renderAgents(null);
+      openStream(missionId);
+    } else {
+      renderAgents(null);
+    }
   }
 
   function selectMission(id) {
@@ -258,14 +390,18 @@
         el.textContent = "ONLINE";
         el.className = "status-value online";
         sel.innerHTML = "";
-        (body.models.length ? body.models : []).forEach((m, i) => {
-          const opt = document.createElement("option");
-          opt.value = m;
-          opt.textContent = m;
-          if (i === 0) opt.selected = true;
-          sel.append(opt);
-        });
-        if (!body.models.length) {
+        if (body.models.length) {
+          body.models.forEach((m, i) => {
+            const opt = document.createElement("option");
+            opt.value = m;
+            opt.textContent = m;
+            if (i === 0) opt.selected = true;
+            sel.append(opt);
+          });
+          // prefer a coder model if present
+          const coder = body.models.find((m) => m.includes("coder"));
+          if (coder) sel.value = coder;
+        } else {
           sel.innerHTML = '<option value="">no models — run `ollama pull qwen2.5-coder:7b`</option>';
         }
       } else {
@@ -298,7 +434,7 @@
 
     const btn = $("forge-btn");
     btn.disabled = true;
-    btn.textContent = "⚒️  FORGING…";
+    btn.querySelector(".forge-btn-label").textContent = "⚒️ FORGING…";
 
     try {
       const res = await fetch("/api/missions", {
@@ -311,28 +447,26 @@
         errBox.textContent = body.error || "Mission could not be created.";
         return;
       }
-      $("feed").innerHTML = "";
-      $("code-view").textContent = "";
-      $("file-tabs").innerHTML = "";
-      $("preview-zone").innerHTML = '<div class="empty">Forging in progress…</div>';
-      $("preview-actions").classList.add("hidden");
+      clearPanels();
+      setPill("queued");
       await refreshMissions();
       loadMission(body.missionId);
     } catch (err) {
       errBox.textContent = "Request failed: " + err.message;
     } finally {
       btn.disabled = false;
-      btn.textContent = "⚒️  FORGE APP";
+      btn.querySelector(".forge-btn-label").textContent = "⚒️ FORGE APP";
     }
   }
 
   // ---------------------------------------------------------------- boot
 
   renderAgents(null);
+  setStage("standby");
   refreshOllama();
   refreshMissions().then(() => {
-    if (state.missions.length && ["planning", "building", "revision", "verifying", "queued"]
-      .includes(state.missions[0].status)) {
+    if (state.missions.length &&
+      ["planning", "building", "revision", "verifying", "queued"].includes(state.missions[0].status)) {
       loadMission(state.missions[0].id);
     }
   });

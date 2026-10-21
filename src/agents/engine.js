@@ -18,10 +18,11 @@ const GENERATED_ROOT = path.join(__dirname, "..", "..", "generated");
 const MAX_BUILD_ATTEMPTS = 3;
 
 class MissionEngine {
-  constructor({ db, broadcast, broadcastToken }) {
+  constructor({ db, broadcast, broadcastToken, flushTokens }) {
     this.db = db;
     this.broadcast = broadcast;         // (missionId, payload) => void
     this.broadcastToken = broadcastToken; // (missionId, agent, token) => void
+    this.flushTokens = flushTokens || (() => {});
   }
 
   emit(missionId, agent, type, message, data) {
@@ -52,6 +53,17 @@ class MissionEngine {
         plan: JSON.stringify(plan.plan),
         app_name: plan.plan.app_name
       });
+
+      // mission brief: ATLAS's reasoning + design direction, streamed to the dashboard
+      this.emit(missionId, "atlas", "brief", "Mission brief locked.", {
+        thinking: plan.plan.thinking || null,
+        app_name: plan.plan.app_name,
+        summary: plan.plan.summary,
+        design_notes: plan.plan.design_notes || null
+      });
+      if (plan.plan.thinking) {
+        this.emit(missionId, "atlas", "thought", plan.plan.thinking);
+      }
 
       for (const phase of plan.plan.phases) {
         this.emit(missionId, "atlas", "plan", phase.name, { tasks: phase.tasks });
@@ -97,6 +109,7 @@ class MissionEngine {
           error: report.errors.join(" | "),
           duration_ms: Date.now() - started
         });
+        this.flushTokens(missionId);
         this.broadcast(missionId, { kind: "status", status: "failed" });
         this.broadcast(missionId, { kind: "done", ok: false });
         return;
@@ -115,6 +128,7 @@ class MissionEngine {
         "Preview deployed. The forged app is live.", { previewUrl });
 
       this.db.updateMission(missionId, { status: "complete", duration_ms: Date.now() - started });
+      this.flushTokens(missionId);
       this.broadcast(missionId, { kind: "status", status: "complete" });
       this.broadcast(missionId, { kind: "done", ok: true, previewUrl });
     } catch (err) {
@@ -125,6 +139,7 @@ class MissionEngine {
         error: message,
         duration_ms: Date.now() - started
       });
+      this.flushTokens(missionId);
       this.broadcast(missionId, { kind: "status", status: "failed" });
       this.broadcast(missionId, { kind: "done", ok: false });
     }

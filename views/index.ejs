@@ -3,10 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0b0e12" />
   <title>AgentForge — Mission Control</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚒️</text></svg>" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
+  <div class="bg-aurora"></div>
+  <div class="bg-grid"></div>
+
   <div class="shell">
 
     <header class="topbar">
@@ -17,6 +22,9 @@
           <div class="brand-subtitle">AN AI TEAM THAT SHIPS REAL APPS</div>
         </div>
       </div>
+      <nav class="top-links">
+        <a href="https://github.com/wockllz/AgentForge" target="_blank" rel="noopener">GITHUB ↗</a>
+      </nav>
       <div class="top-status">
         <div class="status-item">
           <span class="status-label">OLLAMA</span>
@@ -37,16 +45,19 @@
 
       <!-- LEFT: command + history -->
       <aside class="col-left">
-        <section class="card">
+        <section class="card cmd-card">
           <div class="card-caption">NEW MISSION</div>
           <textarea id="prompt-input" rows="4" maxlength="600"
             placeholder="Describe the app you want forged…
-e.g. a pomodoro timer with a task list and dark mode"></textarea>
+e.g. a neon-styled pomodoro timer with a task list and dark mode"></textarea>
           <div class="field-row">
             <label for="model-select">MODEL</label>
             <select id="model-select"><option value="">loading…</option></select>
           </div>
-          <button id="forge-btn" class="forge-btn" type="button">⚒️  FORGE APP</button>
+          <button id="forge-btn" class="forge-btn" type="button">
+            <span class="forge-btn-label">⚒️ FORGE APP</span>
+            <span class="forge-btn-hint">CTRL+ENTER</span>
+          </button>
           <div id="forge-error" class="forge-error"></div>
         </section>
 
@@ -58,13 +69,32 @@ e.g. a pomodoro timer with a task list and dark mode"></textarea>
         </section>
       </aside>
 
-      <!-- CENTER: live feed + code -->
+      <!-- CENTER: forge playground + feed -->
       <section class="col-center">
-        <section class="card feed-card">
+
+        <section class="card viz-card">
           <div class="card-head">
-            <div class="card-caption">AGENT FEED</div>
-            <div id="mission-pill" class="mission-pill">STANDBY</div>
+            <div class="card-caption">THE FORGE — AGENT PLAYGROUND</div>
+            <div class="stage-stepper" id="stage-stepper">
+              <div class="stage" data-stage="planning"><span class="stage-dot"></span>PLAN</div>
+              <div class="stage-sep"></div>
+              <div class="stage" data-stage="building"><span class="stage-dot"></span>BUILD</div>
+              <div class="stage-sep"></div>
+              <div class="stage" data-stage="verifying"><span class="stage-dot"></span>VERIFY</div>
+              <div class="stage-sep"></div>
+              <div class="stage" data-stage="complete"><span class="stage-dot"></span>DEPLOY</div>
+            </div>
           </div>
+          <div class="viz-wrap">
+            <canvas id="viz"></canvas>
+            <div class="viz-overlay">
+              <div id="mission-pill" class="mission-pill">STANDBY</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card feed-card">
+          <div class="card-caption">AGENT FEED</div>
           <div id="feed" class="feed">
             <div class="feed-hint">ATLAS, PIXEL and SENTINEL are standing by. Give them a mission.</div>
           </div>
@@ -76,17 +106,31 @@ e.g. a pomodoro timer with a task list and dark mode"></textarea>
             <div class="file-tabs" id="file-tabs"></div>
           </div>
           <div class="code-split">
-            <pre id="live-stream" class="live-stream"></pre>
-            <pre id="code-view" class="code-view"></pre>
+            <div class="stream-pane">
+              <div class="pane-label">LIVE STREAM</div>
+              <pre id="live-stream" class="live-stream"></pre>
+            </div>
+            <div class="stream-pane">
+              <div class="pane-label">FORGED FILES</div>
+              <pre id="code-view" class="code-view"></pre>
+            </div>
           </div>
         </section>
+
       </section>
 
-      <!-- RIGHT: agents + preview -->
+      <!-- RIGHT: agents + plan + preview -->
       <aside class="col-right">
         <section class="card agents-card">
           <div class="card-caption">AGENT NETWORK</div>
           <div id="agents" class="agents"></div>
+        </section>
+
+        <section class="card plan-card">
+          <div class="card-caption">ATLAS MISSION BRIEF</div>
+          <div id="plan-panel" class="plan-panel">
+            <div class="empty">No plan yet — ATLAS briefs here when a mission starts.</div>
+          </div>
         </section>
 
         <section class="card preview-card">
@@ -94,6 +138,7 @@ e.g. a pomodoro timer with a task list and dark mode"></textarea>
           <div id="preview-zone" class="preview-zone">
             <div class="empty">No app forged yet.</div>
           </div>
+          <div id="preview-meta" class="preview-meta"></div>
           <div id="preview-actions" class="preview-actions hidden">
             <a id="preview-link" class="action-btn primary" target="_blank" rel="noopener">↗ OPEN PREVIEW</a>
             <button id="download-btn" class="action-btn" type="button">⬇ GET FILES</button>
@@ -110,6 +155,7 @@ e.g. a pomodoro timer with a task list and dark mode"></textarea>
 
   </div>
 
+  <script src="/js/viz.js"></script>
   <script src="/js/main.js"></script>
 </body>
 </html>

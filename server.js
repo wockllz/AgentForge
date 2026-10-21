@@ -78,7 +78,7 @@ function flushTokens(missionId) {
   }
 }
 
-const engine = new MissionEngine({ db, broadcast, broadcastToken });
+const engine = new MissionEngine({ db, broadcast, broadcastToken, flushTokens });
 
 // ---------------------------------------------------------------------------
 // API
